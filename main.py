@@ -1,6 +1,6 @@
 import pygame
 import g29_controller
-
+import paho.mqtt.client as mqtt
 
 pygame.init()
 
@@ -18,67 +18,78 @@ FPS = 10
 clock = pygame.time.Clock()
 
 
-done = False
 
-controller = g29_controller.Controller(0)
 
-while not done:
-    for event in pygame.event.get():
-        if event.type == pygame.QUIT:
-            done = True
-    
-    # handle joysticks
-    jsButtons = controller.get_buttons()
-    jsInputs = controller.get_axis()
+def on_connect(client, userdata, flag, rc):
+  print("Connected with result code " + str(rc))
 
-    steerPos = controller.get_steer()
-    throtPos = controller.get_throttle()
-    breakPos = controller.get_break()
-    clutchPos = controller.get_clutch()
+def on_disconnect(client, userdata, rc):
+  if rc != 0:
+     print("Unexpected disconnection.")
 
-    steerV = bytes([128 + int(steerPos * 128)])
-    throtV = bytes([128 + int(throtPos * 128)])
-    breakV = bytes([128 + int(breakPos * 128)])
-    clutchV = bytes([128 + int(clutchPos * 128)])
-    if steerPos >= 0:
-        ball_color = RED
-    else:
-        ball_color = GREEN
+# def on_publish(client, userdata, mid):
+#   print("publish: {0}".format(mid))
 
-    window.fill(BLACK)
+def main():
+    done = False
+    controller = g29_controller.Controller(0)
 
-    plh = []
-    btn = []
-    axis = []
-    # axisPlh = []
-    axis.append(int.from_bytes(steerV))
-    axis.append(int.from_bytes(throtV))
-    axis.append(int.from_bytes(breakV))
-    axis.append(int.from_bytes(clutchV))
+    client = mqtt.Client()                
+    client.on_connect = on_connect        
+    client.on_disconnect = on_disconnect  
+    # client.on_publish = on_publish   
 
-    for i in range(len(jsButtons)):
-        plh.append("%d")
-        btn.append(jsButtons[i]) 
-        # if i < 5: axisPlh.append("%d")
+    client.connect("mqtt.devwarp.work", 1883, 60) 
+
+    client.loop_start()  
+
+    while not done:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                done = True
         
-    font = pygame.font.Font('freesansbold.ttf', 32)
-    ph = "  ".join(plh)
-    aph = "   ".join(plh[:4])
-    btn = tuple(btn)
-    btnText = font.render(ph % btn, True, WHITE)
-    axisText = font.render(aph % tuple(axis), True, WHITE)
+        # handle joysticks
+        jsButtons = controller.get_buttons()
+        jsInputs = controller.get_axis()
 
-    btnTextRect = btnText.get_rect()
-    axisTextRect = axisText.get_rect()
-    btnTextRect.center = (450, 300)
-    axisTextRect.center = (450, 400)
-    window.blit(btnText, btnTextRect)
-    window.blit(axisText, axisTextRect)
+        window.fill(BLACK)
 
-    pygame.display.flip()
-    clock.tick(FPS)
+        plh = []
+        btn = []
+        axis = []
+        arrBuffer = []
+
+        for i in range(len(jsButtons)):
+            plh.append("%d")
+            btn.append(jsButtons[i])
+            arrBuffer.append(int(jsButtons[i]))
+
+            if i < 4:
+                v = bytes([128 + int(jsInputs[i] * 128)])
+                axis.append(int.from_bytes(v))
+                arrBuffer.append(int.from_bytes(v))
+
+        client.publish('g29', bytearray(arrBuffer))
+        font = pygame.font.Font('freesansbold.ttf', 32)
+        plhS = "  ".join(plh)
+        aPlhS = "   ".join(plh[:4])
+
+        btnText = font.render(plhS % tuple(btn), True, WHITE)
+        axisText = font.render(aPlhS % tuple(axis), True, WHITE)
+
+        btnTextRect = btnText.get_rect()
+        axisTextRect = axisText.get_rect()
+        btnTextRect.center = (450, 200)
+        axisTextRect.center = (450, 300)
+        window.blit(btnText, btnTextRect)
+        window.blit(axisText, axisTextRect)
+
+        pygame.display.flip()
+        clock.tick(FPS)
+
+if __name__ == '__main__':        
+    main()  
+
 
 # quit app. 
 pygame.quit()
-
-
